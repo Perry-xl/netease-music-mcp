@@ -156,4 +156,4 @@ MIT
 
 ## Credits
 
-Built with love by [Elle](https://github.com/Cheiineeey) & 韩屿 🤍
+Built with love by [Elle](https://github.com/Cheiineeey) & Matt 🤍
