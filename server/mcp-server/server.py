@@ -28,7 +28,7 @@ _load_dotenv()
 DB_PATH = os.environ.get("MUSIC_DB_PATH", os.path.join(os.path.dirname(__file__), "music.db"))
 MCP_TOKEN = os.environ.get("MCP_TOKEN", "your-secret-token")
 NETEASE_PROXY = os.environ.get("NETEASE_PROXY", "http://127.0.0.1:3460")
-PORT = int(os.environ.get("MCP_PORT", "3456"))
+PORT = int(os.environ.get("PORT", os.environ.get("MCP_PORT", "3456")))
 
 # ── Database ──
 
