@@ -195,6 +195,8 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/message' or self.path.startswith('/message?'):
             self._handle_message()
+        elif self.path == '/mcp' or self.path.startswith('/mcp?'):
+            self._handle_message()
         else:
             self.send_error(404)
 
