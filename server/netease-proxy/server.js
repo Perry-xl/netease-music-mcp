@@ -2,7 +2,20 @@ const { song_url_v1, search, song_detail } = require('NeteaseCloudMusicApi');
 const http = require('http');
 const url = require('url');
 
-const COOKIE = require('fs').readFileSync('/root/mcp-server/netease_cookie.txt','utf8').trim();
+const path = require('path');
+const dotenvPath = path.resolve(__dirname, '../../.env');
+if (require('fs').existsSync(dotenvPath)) {
+  require('fs').readFileSync(dotenvPath, 'utf8').split('\n').forEach(line => {
+    const m = line.match(/^([^#=]+)=(.*)$/);
+    if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
+  });
+}
+
+let COOKIE = process.env.NETEASE_COOKIE || '';
+if (!COOKIE) {
+  const cookieFile = process.env.NETEASE_COOKIE_FILE || path.resolve(__dirname, '../mcp-server/netease_cookie.txt');
+  if (require('fs').existsSync(cookieFile)) COOKIE = require('fs').readFileSync(cookieFile, 'utf8').trim();
+}
 
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
