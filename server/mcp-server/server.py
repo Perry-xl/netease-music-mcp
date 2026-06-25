@@ -107,34 +107,55 @@ def play_music(query, note=None):
     except Exception as e:
         return f"Search failed: {str(e)}"
 
+def _get_uid():
+    try:
+        req = urllib.request.Request('https://music.163.com/api/w/nuser/account/get',
+            data=b'{}', headers=_ne_headers())
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        return data.get('profile', {}).get('userId')
+    except:
+        return None
+
 def list_playlists():
     try:
-        db = sqlite3.connect(DB_PATH)
-        rows = db.execute("SELECT id, name, description, cover_emoji FROM playlists ORDER BY id ASC").fetchall()
-        db.close()
-        if not rows:
-            return "No playlists yet"
-        return "\n".join([f"ID:{r[0]} {r[3] or '♪'} {r[1]} — {r[2] or ''}" for r in rows])
+        uid = _get_uid()
+        if not uid:
+            return "Failed to get user info — check NETEASE_COOKIE"
+        url = f'https://music.163.com/api/user/playlist?uid={uid}&limit=30&offset=0'
+        req = urllib.request.Request(url, headers=_ne_headers())
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        playlists = data.get('playlist', [])
+        if not playlists:
+            return "No playlists found"
+        lines = []
+        for p in playlists:
+            creator = p.get('creator', {}).get('nickname', '')
+            own = ' [mine]' if p.get('creator', {}).get('userId') == uid else ''
+            lines.append(f"ID:{p['id']} ♪ {p['name']} ({p['trackCount']}songs){own}")
+        return "\n".join(lines)
     except Exception as e:
         return f"Failed to list playlists: {e}"
 
-def add_song_to_playlist(playlist_id, song_id, song_name, artist, cover_url='', note=''):
+def add_song_to_playlist(playlist_id, song_id, **_):
     try:
-        db = sqlite3.connect(DB_PATH)
-        existing = db.execute("SELECT id FROM playlist_songs WHERE playlist_id=? AND song_id=?",
-                              (playlist_id, str(song_id))).fetchone()
-        if existing:
-            db.close()
-            return f"'{song_name}' is already in this playlist"
-        db.execute(
-            "INSERT INTO playlist_songs (playlist_id, song_id, song_name, artist, cover_url, note) VALUES (?,?,?,?,?,?)",
-            (playlist_id, str(song_id), song_name, artist, cover_url or '', note or '')
-        )
-        db.execute("UPDATE playlists SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (playlist_id,))
-        db.commit()
-        pl = db.execute("SELECT name FROM playlists WHERE id=?", (playlist_id,)).fetchone()
-        db.close()
-        return f"Added '{song_name}' to playlist '{pl[0] if pl else playlist_id}'"
+        params = urllib.parse.urlencode({
+            'op': 'add',
+            'pid': str(playlist_id),
+            'trackIds': f'[{song_id}]'
+        }).encode()
+        req = urllib.request.Request('https://music.163.com/api/playlist/manipulate/tracks',
+            data=params, headers=_ne_headers())
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        if data.get('code') == 200:
+            return f"Added song {song_id} to playlist {playlist_id}"
+        elif data.get('code') == 502:
+            return "This song is already in the playlist"
+        else:
+            return f"Failed: {data.get('message', data.get('code', 'unknown error'))}"
     except Exception as e:
         return f"Failed to add: {e}"
 
@@ -155,23 +176,19 @@ TOOLS = [
     },
     {
         "name": "list_playlists",
-        "description": "List all playlists with their IDs, names, and descriptions.",
+        "description": "List the user's NetEase Cloud Music playlists (real account playlists, not local). Shows playlist ID, name, track count, and whether it's the user's own playlist.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "add_song_to_playlist",
-        "description": "Add a song to a playlist. Use list_playlists first to get the playlist ID. The song_id comes from the music card tag returned by play_music.",
+        "description": "Add a song to the user's NetEase Cloud Music playlist. Use list_playlists first to get the playlist ID. The song_id comes from the music card tag returned by play_music. Can only add to user's own playlists (marked [mine]).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "playlist_id": {"type": "integer", "description": "Playlist ID from list_playlists"},
-                "song_id": {"type": "string", "description": "Song ID from music card"},
-                "song_name": {"type": "string", "description": "Song name"},
-                "artist": {"type": "string", "description": "Artist name"},
-                "cover_url": {"type": "string", "description": "Cover image URL"},
-                "note": {"type": "string", "description": "Optional note"}
+                "song_id": {"type": "string", "description": "Song ID from play_music result"}
             },
-            "required": ["playlist_id", "song_id", "song_name", "artist"]
+            "required": ["playlist_id", "song_id"]
         }
     }
 ]
@@ -253,9 +270,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
                 text = list_playlists()
             elif name == 'add_song_to_playlist':
                 text = add_song_to_playlist(
-                    args.get('playlist_id'), args.get('song_id'),
-                    args.get('song_name', ''), args.get('artist', ''),
-                    args.get('cover_url', ''), args.get('note', ''))
+                    args.get('playlist_id'), args.get('song_id'))
             else:
                 text = f"Unknown tool: {name}"
             self._json_response({"jsonrpc": "2.0", "id": body.get("id"),
